@@ -188,7 +188,7 @@ class Worker(QObject):
         currentCluster = []
         # get motifs with VLCM
         args = ["../vlcm/build/VLCM", self.tsPath, str(self.windowMin), str(self.windowMax), str(self.correlation)]
-        self.process = subprocess.Popen(args, stdout=subprocess.PIPE, text=True)
+        self.process = subprocess.Popen(args, stdout=subprocess.PIPE, universal_newlines=True)
         for line in self.process.stdout:
             splits = line.split(";")
             w = int(splits[0])
