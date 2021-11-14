@@ -22,6 +22,13 @@ cmake --build . --config Release
 cd src/ui
 pip3 install -r requirements.txt
 ```
+Alternatively, use a virtul environment:
+```
+python3 -m venv vlcm_venv/
+source vlcm_venv/bin/activate
+cd src/ui
+python3 -m pip install -r requirements.txt
+```
 
 ### Run
 ```
