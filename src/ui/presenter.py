@@ -17,23 +17,34 @@ class Presenter:
         self.worker = None
 
     def openFile(self):
-        fileName = self.view.openFileNameDialog()
+        fileName = self.view.openFileDialog()
         self.loadData(fileName)
 
     def loadData(self, filePath):
-        if not self.model.running and filePath is not None:  # TODO feedback if running; check if it is a file
-            self.model.tsPath = filePath
-            self.model.ts = loadTS(filePath)  # TODO catch exceptions
-            self.model.clusteredMotifs = []
-            self.model.motifs = []
+        if filePath is not None:
+            if self.model.running:
+                self.view.showWarningMessage("Already Running",
+                                             "The program is already running. Please cancel the current run before loading new data.")
+            else:
+                try:
+                    ts = loadTS(filePath)
+                except Exception as e:
+                    self.view.showWarningMessage("Error", "There was a problem loading the file:\n" + str(e))
+                    return
 
-            self.view.plotTs(self.model.ts, Path(filePath).name)
-            self.view.setSliderRanges(10, len(self.model.ts) // 2)
-            self.view.clearMotifPlot()
-            self.view.clearMotifTable()
+                self.model.ts = ts
+                self.model.tsPath = filePath
+                self.model.clusteredMotifs = []
+                self.model.motifs = []
 
-            self.view.setProgress(0, "ready")
-            self.view.setRunnable(True)
+                self.view.plotTs(self.model.ts, Path(filePath).name)
+                self.view.setSliderRanges(10, len(self.model.ts) // 2)
+                self.view.clearMotifPlot()
+                self.view.clearMotifTable()
+
+                self.view.setProgress(0, "ready")
+                self.view.setError(False)
+                self.view.setRunnable(True)
 
     def setRunning(self, running):
         self.view.setRunning(running)
@@ -56,6 +67,7 @@ class Presenter:
             # run
             self.setRunning(True)
             self.view.setProgress(0, "started")
+            self.view.setError(False)
             # create thread
             self.runThread = QThread()
             self.worker = Worker(self.model.tsPath, minLength, maxLength, correlation)
@@ -66,6 +78,7 @@ class Presenter:
             self.worker.finished.connect(self.worker.deleteLater)
             self.runThread.finished.connect(self.runThread.deleteLater)
             # connect signals and slots
+            self.worker.error.connect(self.error)
             self.worker.progress[int].connect(lambda value: self.view.setProgress(value=value))
             self.worker.progress[str].connect(lambda text: self.view.setProgress(text=text))
             self.worker.progress[int, str].connect(lambda value, text: self.view.setProgress(value, text))
@@ -76,9 +89,11 @@ class Presenter:
             self.runThread.start()
         else:
             # cancel
-            self.setRunning(False)
-            self.view.setProgress(text="cancelled")
-            self.runThread.join()  # TODO stop
+            self.worker.kill()
+
+    def error(self):
+        self.view.setError(True)
+        self.view.setProgress(text="cancelled")
 
     def addMotif(self, motif, window):
         self.model.motifs.append((motif, window))
@@ -91,7 +106,6 @@ class Presenter:
             self.view.addMotifRow(window, len(motif))
 
     def finishRun(self):
-        self.view.setProgress(100, "finished")
         self.setRunning(False)
 
     def showMotif(self):
@@ -115,7 +129,26 @@ class Presenter:
             self.view.plotMotif(mean, subsequences)
 
     def save(self):
-        pass  # TODO
+        if self.model.showClusters:
+            motifs = self.model.clusteredMotifs
+        else:
+            motifs = self.model.motifs
+        if len(motifs) == 0:
+            self.view.showWarningMessage("No Motifs", "There are no motifs to save.")
+            return
+        fileName = self.view.writeFileDialog()
+        if fileName is not None:
+            minLength, maxLength, correlation = self.model.settingsCurrentRun
+            with open(fileName, "w") as file:
+                file.write("time series;" + str(self.model.tsPath) +
+                           "\ntime series length;" + str(len(self.model.ts)) +
+                           "\nlength min;" + str(minLength) +
+                           "\nlength max;" + str(maxLength) +
+                           "\ncorrelation;" + str(correlation) +
+                           "\n\nlength;size;occurrences\n")
+                for entry in motifs:
+                    motif, window = entry
+                    file.write(str(window) + ";" + str(len(motif)) + ";" + str(motif) + "\n")
 
     def switchMotifTable(self):
         # clear
@@ -128,7 +161,7 @@ class Presenter:
                 motif, window = entry
                 self.view.addMotifRow(window, len(motif))
         else:
-            self.view.setClusterButtonText("Filter")
+            self.view.setClusterButtonText("Show Filtered")
             for entry in self.model.motifs:
                 motif, window = entry
                 self.view.addMotifRow(window, len(motif))
@@ -136,6 +169,7 @@ class Presenter:
 
 class Worker(QObject):
     finished = pyqtSignal()
+    error = pyqtSignal()
     progress = pyqtSignal([int], [str], [int, str])
     motif = pyqtSignal(list, int)
     cluster = pyqtSignal(list, int)
@@ -146,16 +180,16 @@ class Worker(QObject):
         self.windowMin = windowMin
         self.windowMax = windowMax
         self.correlation = correlation
+        self.process = None
 
     def run(self):
         runs = self.windowMax - self.windowMin + 1
         run = 0
         currentCluster = []
         # get motifs with VLCM
-        args = ["../vlcm/build/VLCM", self.tsPath, str(self.windowMin), str(self.windowMax),
-                str(self.correlation)]
-        process = subprocess.Popen(args, stdout=subprocess.PIPE, text=True)
-        for line in process.stdout:
+        args = ["../vlcm/build/VLCM", self.tsPath, str(self.windowMin), str(self.windowMax), str(self.correlation)]
+        self.process = subprocess.Popen(args, stdout=subprocess.PIPE, text=True)
+        for line in self.process.stdout:
             splits = line.split(";")
             w = int(splits[0])
             motif = sorted([int(i) for i in splits[1].split(",")])
@@ -174,10 +208,20 @@ class Worker(QObject):
                     currentCluster.append((motif, w))
             run += 1
             self.progress[int].emit(int(100.0 * run / runs))
-        return_code = process.wait()
-        if return_code:  # TODO handle error
-            raise subprocess.CalledProcessError(return_code, args)
+        return_code = self.process.wait()
+        if return_code:
+            # error / killed
+            self.error.emit()
+        else:
+            self.progress[int, str].emit(100, "finished")
         self.finished.emit()
+
+    def kill(self):
+        if self.process is not None:
+            try:
+                self.process.kill()
+            except ProcessLookupError:
+                pass
 
 
 def motifSimilarity(m1, w1, m2, w2):

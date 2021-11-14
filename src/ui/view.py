@@ -1,4 +1,4 @@
-from PyQt5 import QtWidgets
+from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
@@ -13,6 +13,7 @@ class View(QtWidgets.QMainWindow):
         super().__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        self.setError(False)
 
         # create ts plot canvas
         self.figureTs = plt.figure()
@@ -81,10 +82,19 @@ class View(QtWidgets.QMainWindow):
         self.ui.tableMotifs.itemSelectionChanged.connect(presenter.showMotif)
         self.ui.buttonCluster.clicked.connect(presenter.switchMotifTable)
 
-    def openFileNameDialog(self):
-        title = ""
+    def openFileDialog(self):
+        title = "Open Time Series Data"
         fileTypes = "CSV (*.csv *.txt);;All Files (*)"
         fileName, _ = QtWidgets.QFileDialog.getOpenFileName(self, title, "", fileTypes)
+        if fileName:
+            return fileName
+        else:
+            return None
+
+    def writeFileDialog(self):
+        title = "Save Motifs"
+        fileTypes = "CSV (*.csv);;All Files (*)"
+        fileName, _ = QtWidgets.QFileDialog.getSaveFileName(self, title, "", fileTypes)
         if fileName:
             return fileName
         else:
@@ -195,7 +205,7 @@ class View(QtWidgets.QMainWindow):
 
     def __updateSliderCorrelation(self):
         value = self.ui.sliderCorrelation.value()
-        self.ui.labelCorrelation.setText(str(value/100))
+        self.ui.labelCorrelation.setText(str(value / 100))
 
     def getSettings(self):
         minLength = self.ui.sliderMinLength.value()
@@ -205,6 +215,19 @@ class View(QtWidgets.QMainWindow):
 
     def setClusterButtonText(self, text):
         self.ui.buttonCluster.setText(text)
+
+    def showWarningMessage(self, title, text):
+        QtWidgets.QMessageBox.warning(self, title, text, QtWidgets.QMessageBox.Ok)
+
+    def setError(self, error):
+        palette = self.ui.progressBar.palette()
+        if error:
+            color = QtGui.QColor(239, 41, 41)
+        else:
+            color = QtGui.QColor(48, 140, 198)
+        palette.setColor(QtGui.QPalette.Highlight, color)
+        self.ui.progressBar.setPalette(palette)
+
 
 # drop-down menu class
 class Menu(QtWidgets.QMenu):
