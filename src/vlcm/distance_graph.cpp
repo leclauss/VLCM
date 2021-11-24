@@ -22,8 +22,8 @@ std::pair<EdgeList, WindowRangesList> computeDistanceGraph(const TimeSeriesInfo 
     WindowRangesList windowRanges;
 
     size_t rows = info.n - exclusion;
-    auto lbDist = new double[rows];
-    auto lbDistIndex = new int[rows];
+    auto correlations = new double[rows];
+    auto correlationsIndex = new int[rows];
     auto dotProducts = new DotProduct[rows];
     auto ranges = new WindowRanges[rows];
 
@@ -39,9 +39,9 @@ std::pair<EdgeList, WindowRangesList> computeDistanceGraph(const TimeSeriesInfo 
             // exact distance calculation (SCAMP)
             double corr = info.cov[diag] * info.norms[col] * info.norms[row]; // TODO cov[<diag] is never used
 
-            // lower bound
-            lbDist[relativeDiag] = corr <= 0 ? info.w / static_cast<double>(2.0) : (1 - corr * corr) / 2 * info.w;
-            lbDistIndex[relativeDiag] = relativeDiag;
+            // save correlation for pruning
+            correlations[relativeDiag] = std::max(corr, 0.0);
+            correlationsIndex[relativeDiag] = relativeDiag;
             dotProducts[relativeDiag] = {info.cov[diag], info.w, false};
 
             // update for next row (SCAMP)
@@ -53,9 +53,9 @@ std::pair<EdgeList, WindowRangesList> computeDistanceGraph(const TimeSeriesInfo 
             }
         }
 
-        // sort lower bound index array
-        std::sort(lbDistIndex, lbDistIndex + calculatedDiags, [&](const int &a, const int &b) {
-            return (lbDist[a] < lbDist[b]);
+        // sort correlation index array (descending by correlation)
+        std::sort(correlationsIndex, correlationsIndex + calculatedDiags, [&](const int &a, const int &b) {
+            return (correlations[a] > correlations[b]);
         });
 
         // calculate distances for longer windows
@@ -72,19 +72,24 @@ std::pair<EdgeList, WindowRangesList> computeDistanceGraph(const TimeSeriesInfo 
                     (ts.squaredSums[row + extendedW] - ts.squaredSums[row]) / extendedW -
                     meanExtendedLen * meanExtendedLen;
             double pruneThreshold =
-                    (1 - ts.threshold) * sigExtendedLenSquared * extendedW *
-                    sigBaseLenSquaredInverse; //TODO maybe simplify
-
-            // find first index where lbDist is greater than pruneThreshold
-            auto it = std::upper_bound(lbDistIndex, lbDistIndex + calculatedDiags, pruneThreshold,
-                                       [&](const double &value, const int &index) {
-                                           return (value < lbDist[index]);
-                                       });
-            size_t pruneIndex = it - lbDistIndex;
+                    1 - (1 - ts.threshold) * 2 * extendedW / info.w * sigExtendedLenSquared *
+                        sigBaseLenSquaredInverse; //TODO maybe simplify
+            size_t pruneIndex;
+            if (pruneThreshold <= 0) {
+                pruneIndex = calculatedDiags;
+            } else {
+                pruneThreshold = std::sqrt(pruneThreshold);
+                // find first index where correlation is lower than pruneThreshold
+                auto it = std::upper_bound(correlationsIndex, correlationsIndex + calculatedDiags, pruneThreshold,
+                                           [&](const double &value, const int &index) {
+                                               return (value > correlations[index]);
+                                           });
+                pruneIndex = it - correlationsIndex;
+            }
 
             // for each non-pruned index: update previous dot product and calculate exact distance
             for (int i = 0; i < pruneIndex; i++) {
-                int index = lbDistIndex[i];
+                int index = correlationsIndex[i];
                 int col = index + exclusion + row;
                 if (minCol <= col && col <= maxCol) { // check overlapping
                     if (!dotProducts[index].isDP) { // first time: calculate dot product from stored cov
@@ -129,8 +134,8 @@ std::pair<EdgeList, WindowRangesList> computeDistanceGraph(const TimeSeriesInfo 
 
     }
 
-    delete[] lbDist;
-    delete[] lbDistIndex;
+    delete[] correlations;
+    delete[] correlationsIndex;
     delete[] dotProducts;
     delete[] ranges;
 
