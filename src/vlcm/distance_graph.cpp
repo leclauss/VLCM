@@ -40,7 +40,8 @@ std::pair<EdgeList, WindowRangesList> computeDistanceGraph(const TimeSeriesInfo 
             double corr = info.cov[diag] * info.norms[col] * info.norms[row]; // TODO cov[<diag] is never used
 
             // save correlation for pruning
-            correlations[relativeDiag] = std::max(corr, 0.0);
+            double corrPositive = std::max(corr, 0.0);
+            correlations[relativeDiag] = corrPositive * corrPositive;
             correlationsIndex[relativeDiag] = relativeDiag;
             dotProducts[relativeDiag] = {info.cov[diag], info.w, false};
 
@@ -62,6 +63,7 @@ std::pair<EdgeList, WindowRangesList> computeDistanceGraph(const TimeSeriesInfo 
         double sigBaseLenSquaredInverse = info.sigSquaredInverse[row];
         size_t maxW = std::min(static_cast<size_t>(info.maxW),
                                EXCLUSION_DIVISOR * (ts.len - row) / (EXCLUSION_DIVISOR + 1));
+        double pruneThresholdBase = (1 - ts.threshold) * 2 / info.w * sigBaseLenSquaredInverse;
         for (int extendedW = info.w + 1; extendedW <= maxW; extendedW++) {
             int minCol = row + extendedW / EXCLUSION_DIVISOR;
             size_t maxCol = ts.len - extendedW;
@@ -71,21 +73,14 @@ std::pair<EdgeList, WindowRangesList> computeDistanceGraph(const TimeSeriesInfo 
             double sigExtendedLenSquared =
                     (ts.squaredSums[row + extendedW] - ts.squaredSums[row]) / extendedW -
                     meanExtendedLen * meanExtendedLen;
-            double pruneThreshold =
-                    1 - (1 - ts.threshold) * 2 * extendedW / info.w * sigExtendedLenSquared *
-                        sigBaseLenSquaredInverse; //TODO maybe simplify
-            size_t pruneIndex;
-            if (pruneThreshold <= 0) {
-                pruneIndex = calculatedDiags;
-            } else {
-                pruneThreshold = std::sqrt(pruneThreshold);
-                // find first index where correlation is lower than pruneThreshold
-                auto it = std::upper_bound(correlationsIndex, correlationsIndex + calculatedDiags, pruneThreshold,
-                                           [&](const double &value, const int &index) {
-                                               return (value > correlations[index]);
-                                           });
-                pruneIndex = it - correlationsIndex;
-            }
+            double pruneThreshold = 1 - pruneThresholdBase * extendedW * sigExtendedLenSquared;
+
+            // find first index where correlation is lower than pruneThreshold
+            auto it = std::upper_bound(correlationsIndex, correlationsIndex + calculatedDiags, pruneThreshold,
+                                       [&](const double &value, const int &index) {
+                                           return (value > correlations[index]);
+                                       });
+            size_t pruneIndex = it - correlationsIndex;
 
             // for each non-pruned index: update previous dot product and calculate exact distance
             for (int i = 0; i < pruneIndex; i++) {
