@@ -4,6 +4,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 import matplotlib.pyplot as plt
 
+from dendrogram import Dendrogram
 from window import Ui_MainWindow
 
 
@@ -49,6 +50,7 @@ class View(QtWidgets.QMainWindow):
         self.ui.sliderMinLength.valueChanged.connect(self.__updateSliderMinLength)
         self.ui.sliderMaxLength.valueChanged.connect(self.__updateSliderMaxLength)
         self.ui.sliderCorrelation.valueChanged.connect(self.__updateSliderCorrelation)
+        self.ui.sliderPreFilter.valueChanged.connect(self.__updateSliderPreFilter)
 
     # methods for file drag and drop
     @staticmethod
@@ -81,6 +83,7 @@ class View(QtWidgets.QMainWindow):
         self.ui.buttonSave.clicked.connect(presenter.save)
         self.ui.tableMotifs.itemSelectionChanged.connect(presenter.showMotif)
         self.ui.buttonCluster.clicked.connect(presenter.switchMotifTable)
+        self.ui.buttonDendrogram.clicked.connect(presenter.showDendrogram)
 
     def openFileDialog(self):
         title = "Open Time Series Data"
@@ -207,11 +210,16 @@ class View(QtWidgets.QMainWindow):
         value = self.ui.sliderCorrelation.value()
         self.ui.labelCorrelation.setText(str(value / 100))
 
+    def __updateSliderPreFilter(self):
+        value = self.ui.sliderPreFilter.value()
+        self.ui.labelPreFilter.setText(str(value / 100))
+
     def getSettings(self):
         minLength = self.ui.sliderMinLength.value()
         maxLength = self.ui.sliderMaxLength.value()
         correlation = self.ui.sliderCorrelation.value() / 100
-        return minLength, maxLength, correlation
+        prefilter = self.ui.sliderPreFilter.value() / 100
+        return minLength, maxLength, correlation, prefilter
 
     def setClusterButtonText(self, text):
         self.ui.buttonCluster.setText(text)
@@ -227,6 +235,14 @@ class View(QtWidgets.QMainWindow):
             color = QtGui.QColor(48, 140, 198)
         palette.setColor(QtGui.QPalette.Highlight, color)
         self.ui.progressBar.setPalette(palette)
+
+    def setDendrogramButtonEnabled(self, enabled):
+        self.ui.buttonDendrogram.setEnabled(enabled)
+
+    def showDendrogramWindow(self, linkageTable, labels, colorThreshold):
+        dialog = Dendrogram(self, linkageTable, labels, colorThreshold)
+        dialog.exec_()
+        return dialog.getSelectedThreshold()
 
 
 # drop-down menu class

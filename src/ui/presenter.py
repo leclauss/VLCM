@@ -1,9 +1,15 @@
+import math
 import subprocess
 from pathlib import Path
+
+import numpy as np
+from scipy.cluster.hierarchy import linkage
+from scipy.spatial.distance import pdist
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 from scipy import stats
 
-from utils import loadTS, getMotifPoints, getRanges
+from utils import loadTS, getMotifPoints, getRanges, motifDistance, getMaxCoverMotif, maxMotifDistanceHigherThreshold, \
+    cover
 from model import Model
 from view import View
 
@@ -20,6 +26,20 @@ class Presenter:
         fileName = self.view.openFileDialog()
         self.loadData(fileName)
 
+    def reset(self):
+        self.model.motifs = []
+        self.model.prefilteredMotifs = []
+        self.model.showClustered = False
+        self.view.setDendrogramButtonEnabled(False)
+        self.model.clusteredMotifs = []
+        self.model.clustering = None
+        self.model.currentClusterThreshold = None
+
+    def clearMotifs(self):
+        self.view.showRanges([])
+        self.view.clearMotifPlot()
+        self.view.clearMotifTable()
+
     def loadData(self, filePath):
         if filePath is not None:
             if self.model.running:
@@ -32,15 +52,13 @@ class Presenter:
                     self.view.showWarningMessage("Error", "There was a problem loading the file:\n" + str(e))
                     return
 
+                self.reset()
                 self.model.ts = ts
                 self.model.tsPath = filePath
-                self.model.clusteredMotifs = []
-                self.model.motifs = []
 
                 self.view.plotTs(self.model.ts, Path(filePath).name)
                 self.view.setSliderRanges(10, len(self.model.ts) // 2)
-                self.view.clearMotifPlot()
-                self.view.clearMotifTable()
+                self.clearMotifs()
 
                 self.view.setProgress(0, "ready")
                 self.view.setError(False)
@@ -50,27 +68,21 @@ class Presenter:
         self.view.setRunning(running)
         self.model.running = running
 
-    def clearMotifs(self):
-        self.view.showRanges([])
-        self.view.clearMotifPlot()
-        self.view.clearMotifTable()
-
     def run(self):
         if not self.model.running:
             # clear
             self.clearMotifs()
-            self.model.clusteredMotifs = []
-            self.model.motifs = []
+            self.reset()
             # load settings
             self.model.settingsCurrentRun = self.view.getSettings()
-            minLength, maxLength, correlation = self.model.settingsCurrentRun
+            minLength, maxLength, correlation, prefilter = self.model.settingsCurrentRun
             # run
             self.setRunning(True)
             self.view.setProgress(0, "started")
             self.view.setError(False)
             # create thread
             self.runThread = QThread()
-            self.worker = Worker(self.model.tsPath, minLength, maxLength, correlation)
+            self.worker = Worker(self.model.tsPath, minLength, maxLength, correlation, prefilter)
             self.worker.moveToThread(self.runThread)
             # setup
             self.runThread.started.connect(self.worker.run)
@@ -83,7 +95,8 @@ class Presenter:
             self.worker.progress[str].connect(lambda text: self.view.setProgress(text=text))
             self.worker.progress[int, str].connect(lambda value, text: self.view.setProgress(value, text))
             self.worker.motif.connect(lambda motif, window: self.addMotif(motif, window))
-            self.worker.cluster.connect(lambda motif, window: self.addCluster(motif, window))
+            self.worker.prefiltered.connect(lambda motif, window: self.addPrefiltered(motif, window))
+            self.worker.clustering.connect(lambda clustering: self.processClustering(clustering))
             self.runThread.finished.connect(self.finishRun)
             # start thread
             self.runThread.start()
@@ -97,24 +110,82 @@ class Presenter:
 
     def addMotif(self, motif, window):
         self.model.motifs.append((motif, window))
-        if not self.model.showClusters:
+        if not self.model.showFiltered:
             self.view.addMotifRow(window, len(motif))
 
-    def addCluster(self, motif, window):
-        self.model.clusteredMotifs.append((motif, window))
-        if self.model.showClusters:
+    def addPrefiltered(self, motif, window):
+        self.model.prefilteredMotifs.append((motif, window))
+        if self.model.showFiltered:
             self.view.addMotifRow(window, len(motif))
+
+    def processClustering(self, clustering):
+        self.model.clustering = clustering
+        self.model.showClustered = True
+        clusterThreshold = 0.25  # default cluster threshold
+        self.model.currentClusterThreshold = clusterThreshold
+        self.updateClusteredMotifs(clusterThreshold)
+        self.view.setDendrogramButtonEnabled(True)
+
+    def updateClusteredMotifs(self, cutoff):
+        self.model.clusteredMotifs = self.getMotifsFromClustering(cutoff)
+        if self.model.showFiltered:
+            self.updateMotifTable()
+
+    def getMotifsFromClustering(self, cutoff):
+        # reconstruct clusters
+        prefilteredMotifs = self.model.prefilteredMotifs.copy()
+        clustering = self.model.clustering
+
+        prefilteredNumber = len(prefilteredMotifs)
+        clusterMap = {}
+        for i in range(clustering.shape[0]):
+            if clustering[i, 2] > cutoff:
+                # next clusters to merge have too high distance
+                break
+            # merge two clusters
+            clusterId = prefilteredNumber + i
+
+            # get representatives of both clusters
+            index1 = int(clustering[i, 0])
+            if index1 >= prefilteredNumber:
+                index1 = clusterMap[index1]
+            index2 = int(clustering[i, 1])
+            if index2 >= prefilteredNumber:
+                index2 = clusterMap[index2]
+            motif1 = prefilteredMotifs[index1]
+            motif2 = prefilteredMotifs[index2]
+
+            # only keep motif with highest cover
+            if cover(motif1) > cover(motif2):
+                mergeMotif = index1
+                prefilteredMotifs[index2] = None
+            else:
+                mergeMotif = index2
+                prefilteredMotifs[index1] = None
+            clusterMap[clusterId] = mergeMotif
+
+        resultMotifs = []
+        for motif in prefilteredMotifs:
+            if motif is not None:
+                resultMotifs.append(motif)
+        return resultMotifs
 
     def finishRun(self):
         self.setRunning(False)
 
+    def getCurrentMotifs(self):
+        if self.model.showFiltered:
+            if self.model.showClustered:
+                return self.model.clusteredMotifs
+            else:
+                return self.model.prefilteredMotifs
+        else:
+            return self.model.motifs
+
     def showMotif(self):
         motifId = self.view.getSelectedMotif()
         if motifId is not None:
-            if self.model.showClusters:
-                motif, window = self.model.clusteredMotifs[motifId]
-            else:
-                motif, window = self.model.motifs[motifId]
+            motif, window = self.getCurrentMotifs()[motifId]
 
             ranges = getRanges(getMotifPoints(motif, window))
             self.view.showRanges(ranges)
@@ -129,10 +200,7 @@ class Presenter:
             self.view.plotMotif(mean, subsequences)
 
     def save(self):
-        if self.model.showClusters:
-            motifs = self.model.clusteredMotifs
-        else:
-            motifs = self.model.motifs
+        motifs = self.getCurrentMotifs()
         if len(motifs) == 0:
             self.view.showWarningMessage("No Motifs", "There are no motifs to save.")
             return
@@ -151,20 +219,31 @@ class Presenter:
                     file.write(str(window) + ";" + str(len(motif)) + ";" + str(motif) + "\n")
 
     def switchMotifTable(self):
+        self.model.showFiltered = not self.model.showFiltered
+        self.updateMotifTable()
+
+    def updateMotifTable(self):
         # clear
         self.clearMotifs()
 
-        self.model.showClusters = not self.model.showClusters
-        if self.model.showClusters:
+        if self.model.showFiltered:
             self.view.setClusterButtonText("Show All")
-            for entry in self.model.clusteredMotifs:
-                motif, window = entry
-                self.view.addMotifRow(window, len(motif))
         else:
             self.view.setClusterButtonText("Show Filtered")
-            for entry in self.model.motifs:
-                motif, window = entry
-                self.view.addMotifRow(window, len(motif))
+
+        motifs = self.getCurrentMotifs()
+        for entry in motifs:
+            motif, window = entry
+            self.view.addMotifRow(window, len(motif))
+
+    def showDendrogram(self):
+        labels = []
+        for motif in self.model.prefilteredMotifs:
+            labels.append(motif[1])
+        threshold = self.view.showDendrogramWindow(self.model.clustering, labels, self.model.currentClusterThreshold)
+        if threshold is not None:
+            self.model.currentClusterThreshold = threshold
+            self.updateClusteredMotifs(threshold)
 
 
 class Worker(QObject):
@@ -172,49 +251,71 @@ class Worker(QObject):
     error = pyqtSignal()
     progress = pyqtSignal([int], [str], [int, str])
     motif = pyqtSignal(list, int)
-    cluster = pyqtSignal(list, int)
+    prefiltered = pyqtSignal(list, int)
+    clustering = pyqtSignal(object)
 
-    def __init__(self, tsPath, windowMin, windowMax, correlation):
+    def __init__(self, tsPath, windowMin, windowMax, correlation, prefilter):
         super().__init__()
         self.tsPath = tsPath
         self.windowMin = windowMin
         self.windowMax = windowMax
         self.correlation = correlation
+        self.prefilter = prefilter
         self.process = None
 
     def run(self):
-        runs = self.windowMax - self.windowMin + 1
-        run = 0
-        currentCluster = []
-        # get motifs with VLCM
-        args = ["../vlcm/build/VLCM", self.tsPath, str(self.windowMin), str(self.windowMax), str(self.correlation)]
-        self.process = subprocess.Popen(args, stdout=subprocess.PIPE, universal_newlines=True)
-        for line in self.process.stdout:
-            splits = line.split(";")
-            w = int(splits[0])
-            motif = sorted([int(i) for i in splits[1].split(",")])
-            if len(motif) > 1:
-                self.motif.emit(motif, w)
-                if len(currentCluster) > 0 and motifSimilarity(motif, w, currentCluster[-1][0], w - 1) < 0.8:  # TODO
-                    # cluster done
-                    maxMotif = (0, -1)  # cover, i
-                    for i in range(len(currentCluster)):
-                        cover = len(currentCluster[i][0]) * currentCluster[i][1]
-                        if cover >= maxMotif[0]:
-                            maxMotif = (cover, i)
-                    self.cluster.emit(*currentCluster[maxMotif[1]])
-                    currentCluster = []
-                else:
-                    currentCluster.append((motif, w))
-            run += 1
-            self.progress[int].emit(int(100.0 * run / runs))
-        return_code = self.process.wait()
-        if return_code:
-            # error / killed
-            self.error.emit()
-        else:
+        try:
+            # get motifs with VLCM
+            args = ["../vlcm/build/VLCM", self.tsPath, str(self.windowMin), str(self.windowMax), str(self.correlation)]
+            self.process = subprocess.Popen(args, stdout=subprocess.PIPE, universal_newlines=True)
+
+            totalMotifs = self.windowMax - self.windowMin + 1
+            calculatedMotifs = 0
+
+            currentMotifs = []
+            prefilteredMotifs = []
+
+            # process motif as soon as it is output
+            for line in self.process.stdout:
+                splits = line.split(";")
+                w = int(splits[0])
+                m = sorted([int(i) for i in splits[1].split(",")])
+                calculatedMotifs += 1
+                self.progress[int].emit(int(math.ceil(95.0 * calculatedMotifs / totalMotifs)))
+
+                if len(m) > 1:
+                    self.motif.emit(m, w)
+
+                    # pre-clustering
+                    motif = [m, w]
+                    if len(currentMotifs) > 0 and maxMotifDistanceHigherThreshold(motif, currentMotifs, self.prefilter):
+                        maxMotif = getMaxCoverMotif(currentMotifs)
+                        self.prefiltered.emit(*maxMotif)
+                        prefilteredMotifs.append(maxMotif)
+                        currentMotifs = [motif]
+                    else:
+                        currentMotifs.append(motif)
+
+            if len(currentMotifs) > 0:
+                maxMotif = getMaxCoverMotif(currentMotifs)
+                self.prefiltered.emit(*maxMotif)
+                prefilteredMotifs.append(maxMotif)
+
+            return_code = self.process.wait()
+            if return_code:
+                # error / killed
+                self.error.emit()
+                return
+
+            if len(prefilteredMotifs) >= 2:
+                # agglomerative clustering
+                motifDistanceMatrix = pdist(np.array(prefilteredMotifs, dtype=object), metric=motifDistance)
+                clustering = linkage(motifDistanceMatrix, 'average')
+                self.clustering.emit(clustering)
+
             self.progress[int, str].emit(100, "finished")
-        self.finished.emit()
+        finally:
+            self.finished.emit()
 
     def kill(self):
         if self.process is not None:
@@ -222,76 +323,3 @@ class Worker(QObject):
                 self.process.kill()
             except ProcessLookupError:
                 pass
-
-
-def motifSimilarity(m1, w1, m2, w2):
-    pointerM1 = 0
-    pointerM2 = 0
-
-    onlyM1 = 0
-    onlyM2 = 0
-    shared = 0
-
-    currM1range = [m1[0], m1[0] + w1]
-    currM2range = [m2[0], m2[0] + w2]
-
-    while pointerM1 < len(m1) or pointerM2 < len(m2):
-        if pointerM1 >= len(m1):
-            onlyM2 += currM2range[1] - currM2range[0]
-            pointerM2 += 1
-            if pointerM2 >= len(m2):
-                break
-            currM2range = [m2[pointerM2], m2[pointerM2] + w2]
-            continue
-        if pointerM2 >= len(m2):
-            onlyM1 += currM1range[1] - currM1range[0]
-            pointerM1 += 1
-            if pointerM1 >= len(m1):
-                break
-            currM1range = [m1[pointerM1], m1[pointerM1] + w1]
-            continue
-        if currM1range[1] <= currM2range[0]:
-            onlyM1 += currM1range[1] - currM1range[0]
-            pointerM1 += 1
-            if pointerM1 < len(m1):
-                currM1range = [m1[pointerM1], m1[pointerM1] + w1]
-            continue
-        if currM2range[1] <= currM1range[0]:
-            onlyM2 += currM2range[1] - currM2range[0]
-            pointerM2 += 1
-            if pointerM2 < len(m2):
-                currM2range = [m2[pointerM2], m2[pointerM2] + w2]
-            continue
-        if currM1range[0] < currM2range[0]:
-            onlyM1 += currM2range[0] - currM1range[0]
-            currM1range[0] = currM2range[0]
-        elif currM2range[0] < currM1range[0]:
-            onlyM2 += currM1range[0] - currM2range[0]
-            currM2range[0] = currM1range[0]
-        if currM1range[1] < currM2range[1]:
-            shared += currM1range[1] - currM1range[0]
-            currM2range[0] = currM1range[1]
-            pointerM1 += 1
-            if pointerM1 < len(m1):
-                currM1range = [m1[pointerM1], m1[pointerM1] + w1]
-        elif currM2range[1] < currM1range[1]:
-            shared += currM2range[1] - currM2range[0]
-            currM1range[0] = currM2range[1]
-            pointerM2 += 1
-            if pointerM2 < len(m2):
-                currM2range = [m2[pointerM2], m2[pointerM2] + w2]
-        else:
-            shared += currM1range[1] - currM1range[0]
-            pointerM1 += 1
-            if pointerM1 < len(m1):
-                currM1range = [m1[pointerM1], m1[pointerM1] + w1]
-            pointerM2 += 1
-            if pointerM2 < len(m2):
-                currM2range = [m2[pointerM2], m2[pointerM2] + w2]
-    p = shared / (shared + onlyM1)
-    r = shared / (shared + onlyM2)
-    if p == 0 or r == 0:
-        f1 = 0
-    else:
-        f1 = 2 / (1 / p + 1 / r)
-    return f1
