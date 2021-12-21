@@ -1722,6 +1722,8 @@ bool LMC_Instance::initialize() {
         if (K_CORE_G <= 2) {
             r = search_in_2_k_core_graph();
         }
+    } else {
+        free_block();
     }
     return r;
 }
