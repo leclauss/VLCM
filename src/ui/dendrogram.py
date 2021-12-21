@@ -21,13 +21,15 @@ class Dendrogram(QtWidgets.QDialog):
         self.figureDendrogram = plt.figure()
         self.axesDendrogram = self.figureDendrogram.add_subplot(111)
         self.canvasDendrogram = FigureCanvas(self.figureDendrogram)
-        self.toolbarDendrogram = NavigationToolbar(self.canvasDendrogram, self)
+        # self.toolbarDendrogram = NavigationToolbar(self.canvasDendrogram, self)
         self.ui.frameDendrogram.layout().addWidget(self.canvasDendrogram)
-        self.ui.frameDendrogram.layout().addWidget(self.toolbarDendrogram)
+        # self.ui.frameDendrogram.layout().addWidget(self.toolbarDendrogram)
         self.axesDendrogram.cla()
 
         # draw dendrogram
         hierarchy.dendrogram(linkageTable, ax=self.axesDendrogram, labels=labels, color_threshold=colorThreshold)
+        self.axesDendrogram.set_xlabel("Motif Length")
+        self.axesDendrogram.set_ylabel("Cluster Distance")
         self.line = self.axesDendrogram.axhline(color='red')
         self.line.set_ydata(colorThreshold)
         self.figureDendrogram.tight_layout()
