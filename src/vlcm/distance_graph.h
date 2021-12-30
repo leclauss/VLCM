@@ -15,4 +15,6 @@ std::pair<EdgeList, WindowRangesList> computeDistanceGraphNaive(const TimeSeries
 std::pair<EdgeList, WindowRangesList>
 mergeEdgeLists(const std::vector<EdgeList> &edgeLists, const std::vector<WindowRangesList> &windowRangesLists);
 
+double getBestMultiplier(double correlation);
+
 #endif //VLCM_DISTANCE_GRAPH_H

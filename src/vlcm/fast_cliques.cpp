@@ -29,7 +29,7 @@ inline Clique fastMaxClique(const AdjacencyList &adjacencyList, int exclusion) {
 }
 
 std::vector<Clique>
-getMaximumCliques(const DistanceGraph &graph, int tsLen, int windowMin, int windowMax, bool output) {
+getMaximumCliques(const DistanceGraph &graph, int tsLen, int windowMin, int windowMax, int k, bool output) {
     std::vector<Clique> cliques(windowMax - windowMin + 1);
 
     std::vector<int> cliqueUpperBound(windowMax + 1, tsLen / windowMin);
@@ -57,7 +57,7 @@ getMaximumCliques(const DistanceGraph &graph, int tsLen, int windowMin, int wind
 
         if (!canSkip(w)) {
 
-            if (multiLength >= 6) {
+            if (multiLength >= k) {
                 auto unionClique = fastMaxClique(getUnionGraph(graph, w, w + multiLength - 1),
                                                  currentClique, w);
                 for (int wi = w; wi < w + multiLength; wi++) {

@@ -36,7 +36,7 @@ void runSingleVLCM(const TimeSeriesInfo &ts, int windowMin, int windowMax) {
 
     // calculate maximum cliques
     TIME_START
-    getMaximumCliques(graph, ts.len, windowMin, windowMax, true);
+    getMaximumCliques(graph, ts.len, windowMin, windowMax, 6, true);
     TIME_END("Calculated maximum cliques")
 }
 
@@ -47,8 +47,9 @@ void runVLCM(const TimeSeries &ts, int windowMin, int windowMax, double threshol
     TimeSeriesInfo tsInfo(ts, threshold);
     TIME_END("Preprocessed time series")
 
+    double multiplier = getBestMultiplier(threshold);
     int currentW = windowMin;
-    int currentMaxW = windowMin * 2;
+    int currentMaxW = std::ceil(windowMin * multiplier);
     while (currentW <= windowMax) {
         int maxW = std::min(currentMaxW, windowMax);
 
@@ -58,7 +59,7 @@ void runVLCM(const TimeSeries &ts, int windowMin, int windowMax, double threshol
         TIME_END("Finished windows " << currentW << " .. " << maxW)
 
         currentW = currentMaxW + 1;
-        currentMaxW = currentMaxW * 2;
+        currentMaxW = std::ceil(currentW * multiplier);
     }
 }
 

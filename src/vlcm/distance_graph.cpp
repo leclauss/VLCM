@@ -212,3 +212,20 @@ mergeEdgeLists(const std::vector<EdgeList> &edgeLists, const std::vector<WindowR
 
     return std::make_pair(resultEdgeList, resultWindowRanges);
 }
+
+double getBestMultiplier(double correlation) {
+    if (correlation <= 0) return 1;
+    if (correlation <= 0.55) return 1 + correlation / (0.55 - 0) * (1.1 - 1.0);
+    if (correlation <= 0.6) return 1.1 + (correlation - 0.55) / (0.6 - 0.55) * (1.125 - 1.1);
+    if (correlation <= 0.65) return 1.125 + (correlation - 0.6) / (0.65 - 0.6) * (1.15 - 1.125);
+    if (correlation <= 0.7) return 1.15 + (correlation - 0.65) / (0.7 - 0.65) * (1.175 - 1.15);
+    if (correlation <= 0.75) return 1.175 + (correlation - 0.7) / (0.75 - 0.7) * (1.225 - 1.175);
+    if (correlation <= 0.8) return 1.225 + (correlation - 0.75) / (0.8 - 0.75) * (1.25 - 1.225);
+    if (correlation <= 0.85) return 1.25 + (correlation - 0.8) / (0.85 - 0.8) * (1.3 - 1.25);
+    if (correlation <= 0.9) return 1.3 + (correlation - 0.85) / (0.9 - 0.85) * (1.4 - 1.3);
+    if (correlation <= 0.95) return 1.4 + (correlation - 0.9) / (0.95 - 0.9) * (1.6 - 1.4);
+    if (correlation <= 0.99) return 1.6 + (correlation - 0.95) / (0.99 - 0.95) * (2.25 - 1.6);
+    if (correlation >= 0.9999999) return 100000;
+    return 0.0225 / (1 - correlation);
+
+}
