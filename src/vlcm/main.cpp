@@ -36,7 +36,7 @@ void runSingleVLCM(const TimeSeriesInfo &ts, int windowMin, int windowMax) {
 
     // calculate maximum cliques
     TIME_START
-    getMaximumCliques(graph, ts.len, windowMin, windowMax, 6, true);
+    getMaximumCliques(graph, ts.len, windowMin, windowMax, 16, true);
     TIME_END("Calculated maximum cliques")
 }
 
