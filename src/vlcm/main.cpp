@@ -63,24 +63,47 @@ void runVLCM(const TimeSeries &ts, int windowMin, int windowMax, double threshol
     }
 }
 
+void runVLCM_Naive(const TimeSeries &ts, int windowMin, int windowMax, double threshold) {
+    TIME_INIT
+
+    TIME_START
+    TimeSeriesInfo tsInfo(ts, threshold);
+    TIME_END("Preprocessed time series")
+
+    for (int w = windowMin; w <= windowMax; w++) {
+        PrecomputedInfo info(tsInfo, w, w);
+        auto[edgeList, windowRangesList] = computeDistanceGraphNaive(tsInfo, info);
+        DistanceGraph graph(boost::edges_are_sorted, edgeList.begin(), edgeList.end(), windowRangesList.begin(),
+                            info.n, edgeList.size());
+        auto clique = getMaximumClique(getFullUnionGraph(graph));
+        printClique(w, clique);
+    }
+}
+
 void verify(const TimeSeries &ts, int windowMin, int windowMax, double threshold) {
     if (windowMin < 3) throw VLCMException("Error: window size must be at least 3");
     if (windowMin > windowMax) throw VLCMException("Error: window size smaller (or equal) than maximum window");
-    if (ts.size() <= windowMax) throw VLCMException("Error: window size must be smaller than the time series length");
+    if (ts.size() / 2 < windowMax) throw VLCMException("Error: window size must be smaller than half the time series length");
     if (threshold < -1 || 1 < threshold) throw VLCMException("Error: correlation threshold must be in [-1,1]");
 }
 
 int main(int argc, char **argv) {
     // params
     if (argc < 5) {
-        std::cout << "Usage: ./VLCM <time-series-path> <window-min> <window-max> <correlation> [v]" << std::endl;
+        std::cout << "Usage: ./VLCM <time-series-path> <window-min> <window-max> <correlation> [vn]" << std::endl;
         return 1;
     }
     std::string tsPath = argv[1];
     int windowMin = std::stoi(argv[2]);
     int windowMax = std::stoi(argv[3]);
     double threshold = std::stod(argv[4]);
-    verbose = argc > 5 && argv[5][0] == 'v';
+    verbose = false;
+    bool naive = false;
+    if (argc > 5) {
+        std::string additionalArgs(argv[5]);
+        verbose = additionalArgs.find('v') != std::string::npos;
+        naive = additionalArgs.find('n') != std::string::npos;
+    }
 
     TIME_INIT
     try {
@@ -91,7 +114,7 @@ int main(int argc, char **argv) {
         TIME_END("Time series with length " << ts.size() << " read from " << tsPath)
 
         // default: set window max to half ts length
-        if (windowMax == 0) {
+        if (windowMax <= 0) {
             windowMax = static_cast<int>(ts.size() / 2);
         }
 
@@ -99,10 +122,17 @@ int main(int argc, char **argv) {
         verify(ts, windowMin, windowMax, threshold);
         PRINT("Args: windows=" << windowMin << ".." << windowMax << "; correlation=" << threshold)
 
-        // run Variable-Length CliqueMotif
-        TIME_START
-        runVLCM(ts, windowMin, windowMax, threshold);
-        TIME_END("VLCM finished ")
+        if (naive) {
+            // run naive version (CliqueMotif for each length)
+            TIME_START
+            runVLCM_Naive(ts, windowMin, windowMax, threshold);
+            TIME_END("VLCM_Naive finished")
+        } else {
+            // run Variable-Length CliqueMotif
+            TIME_START
+            runVLCM(ts, windowMin, windowMax, threshold);
+            TIME_END("VLCM finished")
+        }
     } catch (const VLCMException &e) {
         PRINT(e.what())
         return 1;

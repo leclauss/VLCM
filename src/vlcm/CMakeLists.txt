@@ -64,3 +64,4 @@ endif()
 set(SOURCES ${SOURCES} utils.cpp utils.h exception.h precompute.cpp precompute.h lmc.cpp lmc.h graph_utils.h distance_graph.cpp distance_graph.h graph_utils.cpp fast_cliques.cpp fast_cliques.h)
 
 add_executable(VLCM main.cpp ${SOURCES})
+add_executable(Test test.cpp ${SOURCES})

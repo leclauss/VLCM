@@ -17,8 +17,4 @@ typedef std::vector<double> TimeSeries;
 // Reads input time series from file
 void readFile(const std::string &filename, TimeSeries &v);
 
-double get_utime();
-
-long get_mem_usage();
-
 #endif //VLCM_UTILS_H

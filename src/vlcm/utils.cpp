@@ -3,7 +3,6 @@
 
 #include <cmath>
 #include <iostream>
-#include <sys/resource.h>
 
 
 std::ifstream &read_value(std::ifstream &s, double &d, size_t count) {
@@ -43,16 +42,4 @@ void readFile(const std::string &filename, std::vector<double> &v) {
             v.push_back(num);
         }
     }
-}
-
-double get_utime() {
-    struct rusage utime;
-    getrusage(RUSAGE_SELF, &utime);
-    return (double) (utime.ru_utime.tv_sec + (double) utime.ru_utime.tv_usec / 1000000);
-}
-
-long get_mem_usage() {
-    struct rusage mem_usage;
-    getrusage(RUSAGE_SELF, &mem_usage);
-    return mem_usage.ru_maxrss;
 }
