@@ -3,3 +3,9 @@ build
 cmake-build-debug
 cmake-build-debug-coverage
 __pycache__
+algorithms/
+data/UCR_Anomaly_FullData/
+bin
+lib
+lib64
+pyvenv.cfg
