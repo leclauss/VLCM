@@ -9,6 +9,7 @@
 #include <climits>
 
 #include "lmc.h"
+#include "exception.h"
 
 #define NONE -1
 #define DELIMITER 0
@@ -267,6 +268,23 @@ LMC_Instance::~LMC_Instance() {
     free(iSET);
 }
 
+inline void *check_pointer(void *pointer) {
+    if (pointer == nullptr) {
+        throw VLCMException("Error: LMC can not allocate enough memory");
+    }
+    return pointer;
+}
+
+inline void *safe_malloc(size_t size) {
+    void *pointer = malloc(size);
+    return check_pointer(pointer);
+}
+
+inline void *safe_calloc(size_t num, size_t size) {
+    void *pointer = calloc(num, size);
+    return check_pointer(pointer);
+}
+
 static int int_cmp(const void *a, const void *b) {
     return *((int *) b) - *((int *) a);
 }
@@ -288,7 +306,7 @@ void LMC_Instance::allcoate_memory_for_adjacency_list(int nb_node, int nb_edge, 
     if (Init_Adj_List == nullptr) {
         for (i = 1; i <= NB_NODE; i++) {
             if (Node_Degree[i - offset] + 1 > free_size) {
-                Node_Neibors[i] = (int *) malloc(block_size * sizeof(int));
+                Node_Neibors[i] = (int *) safe_malloc(block_size * sizeof(int));
                 BLOCK_LIST[BLOCK_COUNT++] = Node_Neibors[i];
                 free_size = block_size - (Node_Degree[i - offset] + 1);
             } else {
@@ -318,7 +336,7 @@ void LMC_Instance::import_graph_instance(const std::vector<std::vector<int>> &ad
     }
     NB_EDGE = nb_edge / 2;
     REDUCED_iSET_STACK = Node_Degree;
-    Node_Neibors = (int **) malloc((NB_NODE + 1) * sizeof(int *));
+    Node_Neibors = (int **) safe_malloc((NB_NODE + 1) * sizeof(int *));
     allcoate_memory_for_adjacency_list(NB_NODE, NB_EDGE, 0);
     // copy adjacency list
     for (int i = 1; i <= NB_NODE; i++) {
@@ -391,8 +409,8 @@ bool LMC_Instance::sort_by_degeneracy_ordering() {
             INIT_CLQ_SIZE = NB_NODE - p1;
             //printf("I initial clique is %d\n", INIT_CLQ_SIZE);
             //printf("I maxcore number is %d\n", K_CORE_G);
-            MaxCLQ_Stack = (int *) malloc((K_CORE_G + 2) * sizeof(int));
-            Clique_Stack = (int *) malloc((K_CORE_G + 2) * sizeof(int));
+            MaxCLQ_Stack = (int *) safe_malloc((K_CORE_G + 2) * sizeof(int));
+            Clique_Stack = (int *) safe_malloc((K_CORE_G + 2) * sizeof(int));
             memcpy(MaxCLQ_Stack, Candidate_Stack + p1, INIT_CLQ_SIZE * sizeof(int));
             for (i = p1 + 1; i < NB_NODE; i++)
                 CORE_NO[i] = cur_degree;
@@ -695,9 +713,8 @@ int LMC_Instance::fix_node_iset(int fix_iset) {
     for (fix_node = *(nodes); fix_node != NONE; fix_node = *(++nodes)) {
         printf("iset=%d,node=%d,active=%d\n", fix_iset, fix_node, Node_State[fix_node]);
     }
-    printf("error in fix_node_iset\n");
     printf("iSET COUNT=%d\n", iSET_COUNT);
-    exit(0);
+    throw VLCMException("Error: LMC error in fix_node_iset");
 }
 
 int LMC_Instance::unit_iset_process() {
@@ -1224,20 +1241,20 @@ void LMC_Instance::compute_subgraph_degree(int start) {
 }
 
 void LMC_Instance::allocate_memory_for_maxsat() {
-    Node_Reason = (int *) malloc((MAX_VERTEX_NO + 1) * 10 * sizeof(int));
-    ADDED_NODE_iSET = (int *) malloc((MAX_VERTEX_NO + 1) * 2 * sizeof(int));
-    FIXED_NODE_STACK = (int *) malloc((MAX_VERTEX_NO + 1) * 2 * sizeof(int));
+    Node_Reason = (int *) safe_malloc((MAX_VERTEX_NO + 1) * 10 * sizeof(int));
+    ADDED_NODE_iSET = (int *) safe_malloc((MAX_VERTEX_NO + 1) * 2 * sizeof(int));
+    FIXED_NODE_STACK = (int *) safe_malloc((MAX_VERTEX_NO + 1) * 2 * sizeof(int));
 
-    iSET_State = (bool *) calloc((MAX_VERTEX_NO + 1), sizeof(bool));
-    iSET_Used = (bool *) calloc((MAX_VERTEX_NO + 1), sizeof(bool));
-    iSET_Tested = (bool *) malloc((MAX_VERTEX_NO + 1) * sizeof(bool));
-    UNIT_STACK = (int *) malloc((MAX_VERTEX_NO + 1) * sizeof(int));
-    NEW_UNIT_STACK = (int *) malloc((MAX_VERTEX_NO + 1) * sizeof(int));
-    PASSIVE_iSET_STACK = (int *) malloc((MAX_VERTEX_NO + 1) * sizeof(int));
-    iSET_Involved = (bool *) calloc((MAX_VERTEX_NO + 1), sizeof(bool));
-    CONFLICT_ISET_STACK = (int *) malloc((MAX_VERTEX_NO + 1) * 10 * sizeof(int));
-    REASON_STACK = (int *) malloc((MAX_VERTEX_NO + 1) * 10 * sizeof(int));
-    Is_Tested = (bool *) malloc((MAX_VERTEX_NO + 1) * sizeof(bool));
+    iSET_State = (bool *) safe_calloc((MAX_VERTEX_NO + 1), sizeof(bool));
+    iSET_Used = (bool *) safe_calloc((MAX_VERTEX_NO + 1), sizeof(bool));
+    iSET_Tested = (bool *) safe_malloc((MAX_VERTEX_NO + 1) * sizeof(bool));
+    UNIT_STACK = (int *) safe_malloc((MAX_VERTEX_NO + 1) * sizeof(int));
+    NEW_UNIT_STACK = (int *) safe_malloc((MAX_VERTEX_NO + 1) * sizeof(int));
+    PASSIVE_iSET_STACK = (int *) safe_malloc((MAX_VERTEX_NO + 1) * sizeof(int));
+    iSET_Involved = (bool *) safe_calloc((MAX_VERTEX_NO + 1), sizeof(bool));
+    CONFLICT_ISET_STACK = (int *) safe_malloc((MAX_VERTEX_NO + 1) * 10 * sizeof(int));
+    REASON_STACK = (int *) safe_malloc((MAX_VERTEX_NO + 1) * 10 * sizeof(int));
+    Is_Tested = (bool *) safe_malloc((MAX_VERTEX_NO + 1) * sizeof(bool));
 }
 
 void LMC_Instance::store_maximum_clique(int node) {
@@ -1518,14 +1535,14 @@ void LMC_Instance::init_for_search() {
 
 void LMC_Instance::allocate_memory() {
     int i;
-    Second_Name = (int *) malloc((MAX_VERTEX_NO + 1) * sizeof(int));
-    iSET = (int **) malloc((MAX_VERTEX_NO + 1) * sizeof(int *));
-    iSET[0] = (int *) malloc((MAX_VERTEX_NO + 1) * (MAX_VERTEX_NO + 1) * sizeof(int));
+    Second_Name = (int *) safe_malloc((MAX_VERTEX_NO + 1) * sizeof(int));
+    iSET = (int **) safe_malloc((MAX_VERTEX_NO + 1) * sizeof(int *));
+    iSET[0] = (int *) safe_malloc((MAX_VERTEX_NO + 1) * (MAX_VERTEX_NO + 1) * sizeof(int));
     for (i = 1; i < MAX_VERTEX_NO; i++) {
         iSET[i] = iSET[i - 1] + MAX_VERTEX_NO + 1;
     }
-    iSET_Size = (int *) malloc((MAX_VERTEX_NO + 1) * sizeof(int));
-    iSET_Index = (int *) malloc((NB_NODE + 1) * sizeof(int));
+    iSET_Size = (int *) safe_malloc((MAX_VERTEX_NO + 1) * sizeof(int));
+    iSET_Index = (int *) safe_malloc((NB_NODE + 1) * sizeof(int));
 
     if (INIT_CLQ_SIZE >= START_MAXSAT_THD)
         allocate_memory_for_maxsat();
@@ -1584,7 +1601,7 @@ std::vector<int> LMC_Instance::getMaxCliqueVector() const {
 void LMC_Instance::build_init_matrix() {
     int node, neibor, *neibors;
     MATRIX_ROW_WIDTH = MAX_VERTEX_NO / 8 + 1;
-    Adj_Matrix = (unsigned char *) malloc((MAX_VERTEX_NO + 1) * MATRIX_ROW_WIDTH * sizeof(char));
+    Adj_Matrix = (unsigned char *) safe_malloc((MAX_VERTEX_NO + 1) * MATRIX_ROW_WIDTH * sizeof(char));
 
     memset(Adj_Matrix, 0, (MAX_VERTEX_NO + 1) * MATRIX_ROW_WIDTH * sizeof(char));
 
@@ -1661,7 +1678,7 @@ void LMC_Instance::reduce_instance() {
     NB_NODE = j;
     Candidate_Stack[j] = DELIMITER;
     ptr(Candidate_Stack) = j + 1;
-    Old_Name = (int *) malloc((NB_NODE + 1) * sizeof(int));
+    Old_Name = (int *) safe_malloc((NB_NODE + 1) * sizeof(int));
     for (i = 0; i < NB_NODE; i++) {
         Old_Name[NB_NODE - i] = Candidate_Stack[i];
         New_Name[Candidate_Stack[i]] = NB_NODE - i;
@@ -1685,13 +1702,8 @@ void LMC_Instance::reduce_instance() {
         qsort(Node_Neibors[Old_Name[i]], nb, sizeof(int), int_cmp);
     }
 
-    Adj_List = (int *) malloc((NB_EDGE + NB_NODE) * sizeof(int));
+    Adj_List = (int *) safe_malloc((NB_EDGE + NB_NODE) * sizeof(int));
     addr = Adj_List;
-
-    if (Adj_List == nullptr) {
-        printf("can't allocate memory for Adj_List!\n");
-        exit(0);
-    }
 
     for (i = NB_NODE; i > 0; i--) {
         Node_Degree[i] = 0;
