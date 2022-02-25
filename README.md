@@ -1,5 +1,7 @@
 # VLCM
 
+Variable-Length CliqueMotif (VLCM) finds frequently occurring patterns, so-called motifs, in a time series. It is the first exact algorithm that discovers latent motifs of variable length.
+
 ### Compile
 ```
 cd src/vlcm
