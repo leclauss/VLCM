@@ -206,7 +206,7 @@ class Presenter:
             return
         fileName = self.view.writeFileDialog()
         if fileName is not None:
-            minLength, maxLength, correlation = self.model.settingsCurrentRun
+            minLength, maxLength, correlation, prefilter = self.model.settingsCurrentRun
             with open(fileName, "w") as file:
                 file.write("time series;" + str(self.model.tsPath) +
                            "\ntime series length;" + str(len(self.model.ts)) +

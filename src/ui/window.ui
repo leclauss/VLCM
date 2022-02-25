@@ -18,7 +18,7 @@
   </property>
   <property name="windowIcon">
    <iconset>
-    <normaloff>../../../clique-motif/src/ui/icon128.png</normaloff>../../../clique-motif/src/ui/icon128.png</iconset>
+    <normaloff>icon128.png</normaloff>icon128.png</iconset>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout">
@@ -148,12 +148,12 @@
              <widget class="QSlider" name="sliderCorrelation">
               <property name="minimumSize">
                <size>
-                <width>200</width>
+                <width>300</width>
                 <height>0</height>
                </size>
               </property>
               <property name="minimum">
-               <number>0</number>
+               <number>50</number>
               </property>
               <property name="maximum">
                <number>100</number>
